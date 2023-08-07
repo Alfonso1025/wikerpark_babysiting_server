@@ -22,15 +22,31 @@ catch (error) {
    
  },
  uploadBackground:async(req, res)=>{
+  const resolver = Resolver(res)
    try {
-     console.log('hello world')
+     if(req.file === undefined) return resolver.badRequest(null, 'missing_file')
+     if(req.params.id === undefined) return resolver.badRequest(null, 'missing_id')
+  
      const result= await s3.upload(req.file, req.params.id)
      console.log(result)
-     res.send(result)
-     
+     if(result.Bucket === 'backgroundcheck' && result.Key){
+        console.log('file uploaded')
+        const id = ObjectId(req.params.id)
+        await client.connect()
+        const updateQuery= await client.db('wkkerpark').collection('users').updateOne(
+          {_id: id}, 
+          { $set: { "isBackgroundUploaded": true } } 
+        )
+        if(updateQuery.acknowledged == false || updateQuery.matchedCount!=1 && updateQuery.modifiedCount!=1) return resolver.internalServerError(updateQuery, 'error_updating_isBackgroundUploaded')
+        return resolver.success(result, 'file_uploaded')
+    }
+    else{
+      return resolver.internalServerError(result, 'could_not_upload_file')
+    }
    } 
    catch (error) {
      console.log(error)
+     return resolver.internalServerError(error, error.message)
    }
  },
  getFormInfofromUser: async (req, res)=>{
@@ -50,14 +66,18 @@ catch (error) {
       const updateAddress = await client.db('wkkerpark').collection('users').updateOne(
           {_id:id}, {$set:{address}}
       )
-      console.log(updateAddress)
+      if(updateAddress.acknowledged == false || updateAddress.matchedCount!=1&&updateAddress.modifiedCount!=1) return resolver.internalServerError(updateAddress, 'error_updating_address')
+      console.log('adressUpdated')
       const updateKids = await client.db('wkkerpark').collection('users').updateOne(
           {_id:id}, {$set:{kids}}
       )
-
+      if(updateKids.acknowledged == false || updateKids.matchedCount!=1 && updateKids.modifiedCount!=1) return resolver.internalServerError(updateKids, 'error_updating_kids')
+      
+      return resolver.success({updateAddress, updateKids}, 'form_sent_succesfully')
   } 
   catch (error) {
       console.log(error)
+      return resolver.internalServerError(error, error.message)
   }
   finally{
       client.close()
@@ -81,5 +101,13 @@ isCleared: async (req, res) => {
   catch (error) {
     console.log(error)
   }
+},
+addNewField : async (req, res) =>{
+  await client.connect()
+  const query = await client.db('wkkerpark').collection('users').updateMany(
+    {},
+    { $set: { "isBackgroundUploaded": false } } 
+  )
+  
 }
 }

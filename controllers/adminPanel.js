@@ -34,9 +34,7 @@ module.exports={
         catch (error) {
           console.log(error)  
         }
-        finally{
-            client.close()
-        }
+        
     },
     clearUser: async(req,res)=>{
         try {
@@ -51,18 +49,27 @@ module.exports={
         } catch (error) {
             console.log(error)
         }
-        finally{
-            client.close()
-        }
+       
         
     },
     getBackgroundCheck:async (req,res)=>{
-        const readStream = await s3.streamToString(req.params.key)
-        console.log(readStream)
-        res.send(readStream)
+        const readStream = await s3.download(req.params.key).then(url=> {
+            console.log(url)
+            res.send({url})
+        })
+            .catch(error=>{
+                console.log(error)
+                res.send(error)
+            } )
+       
+
+        }
+        
+
+        
       
-       // readStream.pipe(res)
+      
         
          
-    }
+    
 }

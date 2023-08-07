@@ -50,10 +50,11 @@ for(var i = startToInt; i < endToInt; i++ ){
 module.exports = {
 
 postSitting: async (req, res) =>{
+
 const resolver = Resolver()
 try {
    
-await client.connect()
+
 const qtyKids = req.body.qtyKids
 const date = req.body.date
 const startTime = req.body.startTime
@@ -62,7 +63,6 @@ const description = req.body.description
 const id = new ObjectID(req.user)
 
 const points = calculatePoints(qtyKids, startTime, endTime)
-
 
 
 const sit= {
@@ -78,24 +78,31 @@ carriedBy: null,
 candidate: null,
 points
 }
+await client.connect()
 const insertedSit = await client.db('wkkerpark').collection('sits').insertOne(sit)
 console.log(insertedSit)
-     
-  } 
+if(insertedSit.acknowledged !== true) return resolver.internalServerError(insertedSit, 'could_not_insert')
+return resolver.success(insertedSit, 'sit_inserted')
+} 
   catch (error) {
       console.log(error)
+      if(error instanceof Error){
+        return resolver.internalServerError(error, error.message)
+      }
   }
-  finally{
-       client.close()
-  }
-    },
+  
+},
 
 getSits: async (req, res) => {
+    const resolver = Resolver(res)
     try {
-        const resolver = Resolver(res)
+       
         await client.connect()
         
-      const userSitPost =  await client.db('wkkerpark').collection('sits').aggregate([
+      const userSitPost =  await client.db('wkkerpark').collection('sits').aggregate(
+          
+        [
+        {$match: {completed : false}},
          { 
        
         $lookup:{
@@ -105,32 +112,139 @@ getSits: async (req, res) => {
             as : 'user'
         } }
         ]).toArray()
+        if(userSitPost.length < 1) return resolver.success(userSitPost, 'no_sits_found')
         console.log('this is the agregation',userSitPost)
-        resolver.success(userSitPost, 'all the sit post and the user info')
+        resolver.success(userSitPost, 'sits_found')
     } 
     
     catch (error) {
         console.log(error)
+        if(error instanceof Error) return resolver.internalServerError(error, error.message)
     }
-    finally{
-       // await client.close()
-    }
+    
 },
 getSitsByUserId: async (req, res) => {
+    const resolver = Resolver(res)
     try {
-        //const userId = new ObjectId(req.user)
-        console.log(req.user)
+        const userId = new ObjectId(req.user)
         await client.connect()
 
         const sitsByUserId = await client.db('wkkerpark').collection('sits').find(
-            {requiredBy : req.user}).toArray()
-        res.send(sitsByUserId)
+            {requiredBy : userId}).toArray()
+        if(sitsByUserId.length < 1) return resolver.success(sitsByUserId, 'no_sits_found')
+        return resolver.success(sitsByUserId, 'user_sits_found')
+       
     } 
     catch (error) {
         console.log(error)
+        if(error instanceof Error){
+            return resolver.internalServerError(error, error.message)
+        }
     }
     finally{
-        client.close()
+      //  client.close()
     }
+},
+ insertCandidate: async (req, res) =>{
+    const resolver= Resolver(res)
+    try {
+
+        const  candidateId = new ObjectID(req.user)
+        const sitId = new ObjectID(req.params.sitId)
+        const candidateName = req.body.name
+        console.log(candidateName)
+
+        await client.connect()
+        const insertCandidate = await client.db('wkkerpark').collection('sits').updateOne(
+            {_id : sitId}, {$addToSet: {candidate : {candidateId, candidateName, isSelected:false}}}
+        ) 
+        if(insertCandidate.acknowledged !== true && insertCandidate.modifiedCount !== 1) return resolver.internalServerError(insertCandidate, 'could_not_update_candidate')
+        if(insertCandidate.acknowledged === true && insertCandidate.modifiedCount === 1) return resolver.success(insertCandidate, 'candidate_updated') 
+    } 
+    catch (error) {
+      console.log(error)  
+      if(error instanceof Error){
+        return resolver.internalServerError(error, error.message)
+      }
+    }
+},
+
+
+assignSitToCandidate : async (req, res) =>{
+    const resolver = Resolver(res)
+    try {
+      
+       const sitId = new ObjectID(req.params.sitId)
+       const carriedById = new ObjectID(req.body.candidateId)
+       const carriedByName = req.body.candidateName
+       await client.connect()
+       const updateCarriedBy = await client.db('wkkerpark').collection('sits').updateOne(
+           {_id : sitId}, {$set : {carriedBy : {carriedById, carriedByName}}} 
+       )
+       console.log(updateCarriedBy)
+       if (updateCarriedBy.acknowledged === true && updateCarriedBy.modifiedCount === 1){
+        return resolver.success(updateCarriedBy, 'sit was succesfully asigned')
+       }
+       else{
+        return resolver.internalServerError(updateCarriedBy, 'could_not_assign_sit')
+       }
+       
+    } catch (error) {
+        if(error instanceof Error){
+            return resolver.internalServerError(error, error.message)
+        }
+   }
+},
+
+
+
+completedSit : async (req, res )=>{
+    const resolver = Resolver(res)
+try {
+    const sitId = new ObjectID( req.body.sitId) 
+    const requestedById = ObjectID(req.user)
+    const requestedByPoints = req.body.point
+    const carriedById = new ObjectID(req.body.carriedById)
+    const sitPoints = req.body.sitPoints
+    const reducedPoints = requestedByPoints - sitPoints
+    
+    
+   
+    await client.connect()
+    const findCarriedByUser = await client.db('wkkerpark').collection('users').findOne({_id : carriedById})
+    const carriedByPoints = findCarriedByUser.point
+    console.log(carriedByPoints)
+     const addedPoints = carriedByPoints + sitPoints
+   
+
+     const sitStatusToCompleted = await client.db('wkkerpark').collection('sits').updateOne(
+        {_id : sitId}, {$set : {completed : true }}
+    )  
+     const assignPoints = await client.db('wkkerpark').collection('users').updateOne(
+        {_id : carriedById}, {$set : {point : addedPoints}}
+    ) 
+      const takeOffPoints = await client.db('wkkerpark').collection('users').updateOne(
+        { _id : requestedById}, {$set : {point : reducedPoints}}
+    )    
+   
+      
+    if(sitStatusToCompleted.modifiedCount===1 && assignPoints.modifiedCount===1 && takeOffPoints.modifiedCount===1){
+        return resolver.success({sitStatusToCompleted, assignPoints, takeOffPoints}, 'success')
+    }
+      
+    
+    
+} 
+catch (error) {
+   console.log(error) 
+   if(error instanceof Error){
+    return resolver.internalServerError(error, error.message)
+   }
 }
+
 }
+
+}
+
+
+

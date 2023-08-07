@@ -9,5 +9,6 @@ router.get('/getuser', authorization, controller.getUser)
 router.post('/uploadbackground/:id', upload.single('file'), controller.uploadBackground)
 router.post('/profileform', authorization, controller.getFormInfofromUser )
 router.get('/iscleared', authorization, controller.isCleared)
+router.put('/addField', controller.addNewField)
 
 module.exports=router

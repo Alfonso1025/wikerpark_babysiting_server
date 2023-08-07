@@ -26,6 +26,7 @@ module.exports={
 
     upload:(file, id)=>{
         const fileStream = fs.createReadStream(file.path)
+        
         const uploadParams = {
             Bucket: bucketName,
             Body: fileStream,
@@ -40,20 +41,12 @@ module.exports={
             Key:fileKey,
             Bucket:bucketName
         }
-        return await  s3.getObject(downloadParams).createReadStream()
-    },
-    streamToString: async (filekey)=>{
-
-        const stream = await download(filekey)
-        const chunks = []
-
-        return new Promise((resolve, reject) => {
-            stream.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
-            stream.on('error', (err) => reject(err));
-            stream.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
-        })
+        const data =   s3.getSignedUrlPromise('getObject', downloadParams);
+        return data
 
     }
+    
+    
     
 
 }
